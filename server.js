@@ -11,166 +11,48 @@ const { getStatus, fetchVideoSource, invalidateCache, cacheKey, getMfCache } = r
 const { startHealthChecks, getHealthStatus } = require('./health');
 const { sign, verify } = require('./proxy_token');
 
-const httpAgent  = new http.Agent({  keepAlive: true, maxSockets: 64 });
+const httpAgent  = new http.Agent({ keepAlive: true, maxSockets: 64 });
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
 
 const START_TIME = Date.now();
 startHealthChecks();
 
-const port = process.env.PORT || 7000;
-app.listen(port, () => console.log(`Server running on port ${port}`));
-const SERVER_BASE = (
-  process.env.RENDER_EXTERNAL_URL ||
-  process.env.SERVER_URL ||
-  (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ||
-  `http://localhost:${PORT}`
-).replace(/\/$/, '');
-
-// Em serverless (Vercel) cada cold-start é um processo isolado. Sem estas
-// duas vars FIXAS nos Project Settings, o proxy parte-se de forma silenciosa:
-// - SERVER_URL em falta → cai para VERCEL_URL (domínio efémero por deployment,
-//   diferente do domínio estável instalado no Stremio) → tokens apontam para
-//   o host errado
-// - PROXY_SECRET em falta → cada instância gera um segredo aleatório próprio →
-//   a instância que assina o token (/stream) quase nunca é a mesma que o
-//   verifica (/hls, /seg) → verify() falha sempre → 400 silencioso → o player
-//   muda para LibVLC e fica preso sem mais nenhum pedido
-if (process.env.VERCEL) {
-  if (!process.env.SERVER_URL) {
-    console.warn(`[config] AVISO: SERVER_URL não definida — a usar ${SERVER_BASE} (domínio efémero do deployment). Define SERVER_URL=https://<o-teu-dominio-estavel>.vercel.app nos Project Settings → Environment Variables.`);
-  }
-  if (!process.env.PROXY_SECRET) {
-    console.warn('[config] AVISO CRÍTICO: PROXY_SECRET não definida — cada instância serverless gera um segredo aleatório próprio, o que faz a verificação dos tokens do proxy /hls e /seg falhar entre instâncias (reprodução fica presa). Gera um valor fixo com `node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"` e define PROXY_SECRET nos Project Settings → Environment Variables.');
-  }
-}
-
 const app = express();
 
+// Enable gzip compression
+app.use(compression());
+
+// Load Stremio addon router
+app.use(getRouter(addonInterface));
+
+// Manifest route
 const manifest = require('./manifest.json');
 app.get('/manifest.json', (req, res) => {
   res.json(manifest);
+});
 
-// Enable gzip compression for faster manifest delivery
-app.use(compression());
-
-app.use(getRouter(addonInterface));
-
-app.get('/favicon.ico', (req, res) => res.status(204).end());
-app.get('/favicon.png', (req, res) => res.status(204).end());
-
+// Example stream route
 app.get('/stream/:type/:id.json', (req, res) => {
   res.json({
     streams: [
       { title: "Sample Stream", url: "https://example.com/video.mp4" }
     ]
-app.get('/', (req, res) => {
-  res.setHeader('content-type', 'text/html');
-  res.end(`<!DOCTYPE html>
-  res.send('Stremio Addon is running');
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StreamIMDb Connector</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f0f13; color: #e0e0e0;
-      min-height: 100vh; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; padding: 24px;
-    }
-    .card {
-      background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 16px;
-      padding: 40px; max-width: 520px; width: 100%;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
-    }
-    .logo { width: 72px; height: 72px; border-radius: 16px; margin-bottom: 20px; }
-    h1 { font-size: 1.6rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
-    .version { font-size: 0.8rem; color: #666; margin-bottom: 12px; }
-    p { color: #999; font-size: 0.95rem; line-height: 1.5; margin-bottom: 28px; }
-    .btn {
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      padding: 12px 22px; border-radius: 10px; font-size: 0.95rem; font-weight: 600;
-      text-decoration: none; border: none; cursor: pointer;
-      width: 100%; margin-bottom: 12px; transition: opacity 0.2s;
-    }
-    .btn:hover { opacity: 0.85; }
-    .btn-install { background: #7b3fe4; color: #fff; }
-    .btn-donate  { background: #003087; color: #fff; }
-    .divider { border: none; border-top: 1px solid #2a2a3a; margin: 24px 0; }
-    .label { font-size: 0.9rem; font-weight: 600; color: #ccc; margin-bottom: 12px; }
-    textarea {
-      width: 100%; background: #0f0f13; border: 1px solid #2a2a3a;
-      border-radius: 10px; color: #e0e0e0; padding: 12px; font-size: 0.9rem;
-      resize: vertical; min-height: 90px; font-family: inherit; margin-bottom: 10px;
-    }
-    textarea:focus { outline: none; border-color: #7b3fe4; }
-    .btn-report { background: #2a2a3a; color: #ccc; font-size: 0.9rem; }
-    .tip {
-      background: #12121a; border: 1px solid #2a2a3a; border-radius: 10px;
-      padding: 12px 14px; font-size: 0.82rem; color: #888; line-height: 1.5; margin-top: 4px;
-    }
-    .tip strong { color: #bbb; }
-    .footer { margin-top: 24px; font-size: 0.75rem; color: #444; text-align: center; }
-    .footer a { color: #666; text-decoration: none; }
-    .update-banner {
-      display: none; align-items: center; gap: 10px;
-      background: #1a2e1a; border: 1px solid #2d5a2d; border-radius: 10px;
-      padding: 12px 16px; margin-bottom: 16px; font-size: 0.88rem; color: #7ec87e;
-    }
-    .update-banner a { color: #a8e6a8; font-weight: 600; text-decoration: none; }
-    .update-banner a:hover { text-decoration: underline; }
-    .update-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; flex-shrink: 0; animation: pulse 2s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="update-banner" id="update-banner">
-      <span class="update-dot"></span>
-      <span>New version available: <a id="update-link" href="#" target="_blank"></a> &mdash; <a href="#">reinstall to update</a></span>
-    </div>
-    <img class="logo" src="https://raw.githubusercontent.com/F100Pilot/stremio-addon-streamimdb/main/icon.png" alt="icon">
-    <h1>StreamIMDb Connector</h1>
-    <div class="version">v1.4.1 &nbsp;·&nbsp; Movies &amp; Series</div>
-    <p>Stream movies and series natively inside Stremio — no browser required.</p>
-    <a class="btn btn-install" id="install-btn" href="#">&#9654; Install in Stremio</a>
-    <a class="btn btn-donate" href="https://paypal.me/F100Pilot" target="_blank">&#9829; Donate via PayPal</a>
-    <hr class="divider">
-    <div class="label">Android tip</div>
-    <div class="tip">If streams don't play on Android, go to <strong>Stremio → Settings → Player</strong> and switch to <strong>VLC</strong>. ExoPlayer (default) may fail with HLS proxy streams.</div>
-    <hr class="divider">
-    <div class="label">Report an issue</div>
-    <textarea id="msg" placeholder="Describe the issue (e.g. movie title, what happened)..."></textarea>
-    <a id="report-btn" class="btn btn-report" href="#">&#9993; Send Report</a>
-  </div>
-  <div class="footer">
-    <a href="/manifest.json">manifest.json</a> &nbsp;·&nbsp;
-    <a href="https://github.com/F100Pilot/stremio-addon-streamimdb" target="_blank">GitHub</a>
-  </div>
-  <script>
-    document.getElementById('install-btn').href = 'stremio://' + window.location.host + '/manifest.json';
-    fetch('/version-check').then(function(r){ return r.json(); }).then(function(d) {
-      if (d.outdated && d.latest) {
-        var banner = document.getElementById('update-banner');
-        var link   = document.getElementById('update-link');
-        link.textContent = 'v' + d.latest;
-        link.href = d.url || 'https://github.com/F100Pilot/stremio-addon-streamimdb/releases';
-        banner.querySelector('a:last-child').href = 'stremio://' + window.location.host + '/manifest.json';
-        banner.style.display = 'flex';
-      }
-    }).catch(function(){});
-    document.getElementById('report-btn').addEventListener('click', function(e) {
-      e.preventDefault();
-      const msg = document.getElementById('msg').value.trim();
-      if (!msg) { alert('Please describe the issue first.'); return; }
-      window.location.href = 'mailto:pflm.bet@gmail.com?subject=' + encodeURIComponent('StreamIMDb Report') + '&body=' + encodeURIComponent(msg);
-    });
-  </script>
-</body>
-</html>`);
+  });
 });
+
+// Root route (simple HTML page)
+app.get('/', (req, res) => {
+  res.send('Stremio Addon is running');
+});
+
+// Favicon routes
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.get('/favicon.png', (req, res) => res.status(204).end());
+
+// Start server
+const port = process.env.PORT || 7000;
+app.listen(port, () => console.log(`Server running on port ${port}`));
+
 
 // ── Version check ───────────────────────────────────────────────────────────
 const CURRENT_VERSION = '1.4.1';
