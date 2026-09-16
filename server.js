@@ -17,7 +17,8 @@ const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64 });
 const START_TIME = Date.now();
 startHealthChecks();
 
-const PORT = process.env.PORT || 7000;
+const port = process.env.PORT || 7000;
+app.listen(port, () => console.log(`Server running on port ${port}`));
 const SERVER_BASE = (
   process.env.RENDER_EXTERNAL_URL ||
   process.env.SERVER_URL ||
