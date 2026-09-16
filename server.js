@@ -46,6 +46,10 @@ if (process.env.VERCEL) {
 
 const app = express();
 
+const manifest = require('./manifest.json');
+app.get('/manifest.json', (req, res) => {
+  res.json(manifest);
+
 // Enable gzip compression for faster manifest delivery
 app.use(compression());
 
@@ -54,6 +58,11 @@ app.use(getRouter(addonInterface));
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/favicon.png', (req, res) => res.status(204).end());
 
+app.get('/stream/:type/:id.json', (req, res) => {
+  res.json({
+    streams: [
+      { title: "Sample Stream", url: "https://example.com/video.mp4" }
+    ]
 app.get('/', (req, res) => {
   res.setHeader('content-type', 'text/html');
   res.end(`<!DOCTYPE html>
