@@ -5,5 +5,7 @@
   "description": "Custom Stremio add-on",
   "resources": ["stream"],
   "types": ["movie", "series"],
-  "catalogs": []
+  "catalogs": [],
+  "background": "https://stremio.com/manifest-background.jpg",
+  "logo": "https://stremio.com/manifest-logo.png"
 }
