@@ -31,13 +31,24 @@ app.get('/manifest.json', (req, res) => {
   res.json(manifest);
 });
 
-// Example stream route
-app.get('/stream/:type/:id.json', (req, res) => {
-  res.json({
-    streams: [
-      { title: "Sample Stream", url: "https://example.com/video.mp4" }
-    ]
-  });
+// Stream route using scraper
+app.get('/stream/:type/:id.json', async (req, res) => {
+  const { type, id } = req.params;
+  try {
+    const result = await fetchVideoSource(id, type);
+
+    if (result && result.streams && result.streams.length > 0) {
+      // Log streams for debugging
+      console.log(`[stream] Found streams for ${id}:`, result.streams);
+      res.json({ streams: result.streams });
+    } else {
+      console.log(`[stream] No streams found for ${id}`);
+      res.json({ streams: [] });
+    }
+  } catch (err) {
+    console.error("[stream] Error:", err.message);
+    res.json({ streams: [] });
+  }
 });
 
 // Root route (simple HTML page)
@@ -52,7 +63,6 @@ app.get('/favicon.png', (req, res) => res.status(204).end());
 // Start server
 const port = process.env.PORT || 7000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
-
 
 // ── Version check ───────────────────────────────────────────────────────────
 const CURRENT_VERSION = '1.4.1';
